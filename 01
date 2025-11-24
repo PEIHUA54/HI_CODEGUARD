@@ -1,132 +1,378 @@
-我來給你完整的程式碼,按照你的專案結構組織:
+好問題!讓我解釋一下 `GetKey` 的用途和為什麼需要它。
 
-## 📁 完整程式碼清單
+## 🔍 GetKey 的用途說明
 
-### 1. CODE_GUARD.cs (主要API類別)
+### 當前狀況分析
+
+看你提供的程式碼,我發現有兩個版本:
+
+**版本1 (簡單版 - 你原本的 getCode):**
 
 ```csharp
-using HI_CODEGUARD_DLL.Factory;
-using HI_CODEGUARD_DLL.Models;
-using Newtonsoft.Json;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace HI_CODEGUARD_DLL
+// 只用 SHA256
+string rawString = sys_id + data + timeStr;
+byte[] inputBytes = Encoding.UTF8.GetBytes(rawString);
+using (SHA256 sha256 = SHA256.Create())
 {
-    /// <summary>
-    /// 授權碼產生與驗證主類別
-    /// </summary>
-    public class CODE_GUARD
+    byte[] hashBytes = sha256.ComputeHash(inputBytes);
+    // ...
+}
+```
+
+**版本2 (進階版 - 你原本的 VerifyCode 有提到):**
+
+```csharp
+// 使用 Salt (加鹽) 增加安全性
+byte[] saltBytes = HexStringToBytes(GetKey(sys_id));
+// 這個 saltBytes 可以跟 inputBytes 結合後再雜湊
+```
+
+-----
+
+## ❓ 為什麼會有 GetKey?
+
+你原本提供的第二段程式碼有這行:
+
+```csharp
+byte[] saltBytes = new byte[8];
+saltBytes = HexStringToBytes(GetKey(sys_id));
+```
+
+這是**加鹽(Salt)機制**,目的是增加安全性。
+
+-----
+
+## 🤔 實際上需要嗎?
+
+### 答案:看你的安全需求
+
+**如果你的需求是簡單的授權碼系統:**
+
+- ✅ **不需要 GetKey**
+- ✅ 直接用 SHA256(SysID + Data + Time) 就夠了
+- ✅ 我提供的完整程式碼已經是這個版本(較簡單但足夠安全)
+
+**如果你需要更高安全性:**
+
+- ⚠️ 可以加入 GetKey (Salt機制)
+- ⚠️ 不同系統有不同的加密金鑰
+- ⚠️ 更難被破解
+
+-----
+
+## 🔧 兩種實作方式比較
+
+### 方式A: 不使用 GetKey (我提供的版本)
+
+```csharp
+// FGetCode.cs 和 FVerifyCode.cs
+private string GetCode(string sysId, string data, int codeLength)
+{
+    DateTime tryTime = DateTime.Now;
+    tryTime = new DateTime(tryTime.Year, tryTime.Month, tryTime.Day,
+           tryTime.Hour, tryTime.Minute, 0);
+    string timeStr = tryTime.ToString("yyyy-MM-dd HH:mm:ss");
+
+    // 簡單組合
+    string rawString = sysId + data + timeStr;
+    byte[] inputBytes = Encoding.UTF8.GetBytes(rawString);
+
+    using (SHA256 sha256 = SHA256.Create())
     {
-        /// <summary>
-        /// 產生授權碼
-        /// </summary>
-        /// <param name="requestJson">JSON格式的請求參數,包含SysID、Data、CodeLength</param>
-        /// <returns>JSON格式的回應,包含Result_code、Msg、Code</returns>
-        public string GetCode(string requestJson)
+        byte[] hashBytes = sha256.ComputeHash(inputBytes);
+        StringBuilder hex = new StringBuilder();
+        foreach (byte b in hashBytes)
+            hex.AppendFormat("{0:X2}", b);
+        return hex.ToString().Substring(0, codeLength).ToUpper();
+    }
+}
+```
+
+**優點:**
+
+- 簡單易懂
+- 不需要維護金鑰表
+- 對於一般企業應用已經足夠安全
+
+-----
+
+### 方式B: 使用 GetKey (加鹽版本)
+
+如果你想要更高安全性,可以改成這樣:
+
+```csharp
+private string GetCode(string sysId, string data, int codeLength)
+{
+    DateTime tryTime = DateTime.Now;
+    tryTime = new DateTime(tryTime.Year, tryTime.Month, tryTime.Day,
+           tryTime.Hour, tryTime.Minute, 0);
+    string timeStr = tryTime.ToString("yyyy-MM-dd HH:mm:ss");
+
+    // 取得該系統的專屬金鑰
+    string systemKey = Common.GetKey(sysId);
+    
+    // 組合時加入金鑰
+    string rawString = sysId + data + timeStr + systemKey;
+    byte[] inputBytes = Encoding.UTF8.GetBytes(rawString);
+
+    using (SHA256 sha256 = SHA256.Create())
+    {
+        byte[] hashBytes = sha256.ComputeHash(inputBytes);
+        StringBuilder hex = new StringBuilder();
+        foreach (byte b in hashBytes)
+            hex.AppendFormat("{0:X2}", b);
+        return hex.ToString().Substring(0, codeLength).ToUpper();
+    }
+}
+```
+
+**優點:**
+
+- 更高安全性
+- 不同系統產生的授權碼無法互通
+- 即使知道演算法也難以偽造
+
+**缺點:**
+
+- 需要維護金鑰表
+- 如果金鑰外洩需要更新
+
+-----
+
+## 💡 我的建議
+
+### 建議1: 簡單版本就夠了 (不用 GetKey)
+
+**原因:**
+
+1. 你的授權碼有時效性 (MaxMinutes)
+1. 已經使用 SHA256 加密
+1. 有系統ID隔離
+1. 對於 POS 系統的主管授權場景已經足夠
+
+**使用我提供的完整程式碼即可,不需要改動。**
+
+-----
+
+### 建議2: 如果要更高安全性
+
+如果主管要求更高安全性,可以這樣調整:
+
+#### 修改 FGetCode.cs:
+
+```csharp
+private string GetCode(string sysId, string data, int codeLength)
+{
+    DateTime tryTime = DateTime.Now;
+    tryTime = new DateTime(tryTime.Year, tryTime.Month, tryTime.Day,
+           tryTime.Hour, tryTime.Minute, 0);
+    string timeStr = tryTime.ToString("yyyy-MM-dd HH:mm:ss");
+
+    // 加入系統金鑰
+    string systemKey = Common.GetKey(sysId);
+    string rawString = sysId + data + timeStr + systemKey;  // ← 這裡加入 systemKey
+    
+    byte[] inputBytes = Encoding.UTF8.GetBytes(rawString);
+
+    using (SHA256 sha256 = SHA256.Create())
+    {
+        byte[] hashBytes = sha256.ComputeHash(inputBytes);
+        StringBuilder hex = new StringBuilder();
+        foreach (byte b in hashBytes)
+            hex.AppendFormat("{0:X2}", b);
+        return hex.ToString().Substring(0, codeLength).ToUpper();
+    }
+}
+```
+
+#### 修改 FVerifyCode.cs (同樣的改法):
+
+```csharp
+private bool VerifyCode(string sysId, string data, string inputCode, int codeLength, int maxMinutes)
+{
+    string codeCandidate = "";
+    DateTime now = DateTime.Now;
+
+    for (int i = 0; i <= maxMinutes; i++)
+    {
+        DateTime tryTime = now.AddMinutes(-i);
+        var fixedTime = new DateTime(tryTime.Year, tryTime.Month, tryTime.Day, 
+            tryTime.Hour, tryTime.Minute, 0);
+        string timeStr = fixedTime.ToString("yyyy-MM-dd HH:mm:ss");
+
+        // 加入系統金鑰
+        string systemKey = Common.GetKey(sysId);
+        string rawString = sysId + data + timeStr + systemKey;  // ← 這裡加入 systemKey
+        
+        byte[] inputBytes = Encoding.UTF8.GetBytes(rawString);
+
+        using (SHA256 sha256 = SHA256.Create())
         {
-            var response = new MGetCode.GetCodeResponse();
-
-            try
-            {
-                // 反序列化請求參數
-                var request = JsonConvert.DeserializeObject<MGetCode.GetCodeRequest>(requestJson);
-                
-                if (request == null)
-                {
-                    response = new MGetCode.GetCodeResponse
-                    {
-                        Result_code = Common.Codes.PARAMETER_ERROR,
-                        Msg = "請求參數格式錯誤"
-                    };
-                    return JsonConvert.SerializeObject(response);
-                }
-
-                // 執行產生授權碼
-                FGetCode func = new FGetCode();
-                response = func.Execute(request.SysID, request.Data, request.CodeLength);
-            }
-            catch (JsonException jex)
-            {
-                response = new MGetCode.GetCodeResponse
-                {
-                    Result_code = Common.Codes.PARAMETER_ERROR,
-                    Msg = "JSON格式錯誤：" + jex.Message
-                };
-            }
-            catch (Exception ex)
-            {
-                response = new MGetCode.GetCodeResponse
-                {
-                    Result_code = Common.Codes.SYSTEM_ERROR,
-                    Msg = "系統錯誤：" + ex.Message
-                };
-            }
-
-            return JsonConvert.SerializeObject(response);
+            byte[] hashBytes = sha256.ComputeHash(inputBytes);
+            StringBuilder hex = new StringBuilder();
+            foreach (byte b in hashBytes)
+                hex.AppendFormat("{0:X2}", b);
+            codeCandidate = hex.ToString().Substring(0, codeLength).ToUpper();
         }
 
-        /// <summary>
-        /// 驗證授權碼
-        /// </summary>
-        /// <param name="requestJson">JSON格式的請求參數,包含SysID、Data、CodeLength、MaxMinutes、InputCode</param>
-        /// <returns>JSON格式的回應,包含Result_code、Msg、VerifyResult</returns>
-        public string VerifyCode(string requestJson)
+        if (codeCandidate.Equals(inputCode.ToUpper(), StringComparison.OrdinalIgnoreCase))
         {
-            var response = new MVerifyCode.VerifyCodeResponse();
-
-            try
-            {
-                // 反序列化請求參數
-                var request = JsonConvert.DeserializeObject<MVerifyCode.VerifyCodeRequest>(requestJson);
-                
-                if (request == null)
-                {
-                    response = new MVerifyCode.VerifyCodeResponse
-                    {
-                        Result_code = Common.Codes.PARAMETER_ERROR,
-                        Msg = "請求參數格式錯誤",
-                        VerifyResult = false
-                    };
-                    return JsonConvert.SerializeObject(response);
-                }
-
-                // 執行驗證授權碼
-                FVerifyCode func = new FVerifyCode();
-                response = func.Execute(request.SysID, request.Data, request.CodeLength, 
-                    request.MaxMinutes, request.InputCode);
-            }
-            catch (JsonException jex)
-            {
-                response = new MVerifyCode.VerifyCodeResponse
-                {
-                    Result_code = Common.Codes.PARAMETER_ERROR,
-                    Msg = "JSON格式錯誤：" + jex.Message,
-                    VerifyResult = false
-                };
-            }
-            catch (Exception ex)
-            {
-                response = new MVerifyCode.VerifyCodeResponse
-                {
-                    Result_code = Common.Codes.SYSTEM_ERROR,
-                    Msg = "系統錯誤：" + ex.Message,
-                    VerifyResult = false
-                };
-            }
-
-            return JsonConvert.SerializeObject(response);
+            return true;
         }
+    }
+
+    return false;
+}
+```
+
+-----
+
+## ✅ 結論
+
+### 我的建議:
+
+**先使用簡單版本(我已提供的完整程式碼)**
+
+- 不需要 GetKey
+- 已經夠安全
+- 程式碼更簡潔
+- 不需要維護金鑰
+
+**如果主管要求更高安全性,再加入 GetKey**
+
+- 只需要在兩個地方加入 `+ systemKey`
+- Common.GetKey 我已經提供了
+
+-----
+
+## 📌 總結:你現在需要做什麼?
+
+**直接使用我提供的完整程式碼即可!**
+
+我提供的版本:
+
+- ✅ 已經很安全 (SHA256 + 時效性)
+- ✅ 不需要 GetKey 也很安全
+- ✅ 程式碼簡單易懂
+- ✅ 符合你的需求
+
+**GetKey 是可選的額外安全機制,不是必要的!**
+
+啊!我明白了!讓我重新看你主管提供的程式碼:
+
+## 🔍 主管提供的程式碼分析
+
+你主管給的**第二段程式碼**有這幾行:
+
+```csharp
+byte[] saltBytes = new byte[8];
+saltBytes = HexStringToBytes(GetKey(sys_id));
+```
+
+但是:
+
+1. **saltBytes 被宣告了,但後面沒用到!**
+1. GetKey 被呼叫了,但主管沒提供這個方法的實作
+
+-----
+
+## 💡 真相:GetKey 可能是**歷史遺留程式碼**
+
+### 我的判斷:
+
+主管可能是從舊專案複製程式碼過來,但:
+
+- **實際上沒用到 saltBytes**
+- **GetKey 可以拿掉**
+
+讓我檢查主管的程式碼:
+
+```csharp
+// 主管的 VerifyCode
+public bool VerifyCode(string sys_id, string data, string inputCode, int pwd_length, int maxMinutes)
+{
+    for (int i = 0; i <= maxMinutes; i++)
+    {
+        DateTime tryTime = now.AddMinutes(-i);
+        var fixedTime = new DateTime(...);
+        string timeStr = fixedTime.ToString("yyyy-MM-dd HH:mm:ss");
+
+        string rawString = sys_id + data + timeStr;  // ← 看!這裡只用了 sys_id + data + timeStr
+        byte[] hashBytes;
+
+        byte[] saltBytes = new byte[8];
+        saltBytes = HexStringToBytes(GetKey(sys_id));  // ← 這兩行宣告了但沒用到!
+
+        byte[] inputBytes = Encoding.UTF8.GetBytes(rawString);
+
+        // 雜湊處理
+        using (SHA256 sha256 = SHA256.Create())
+        {
+            hashBytes = sha256.ComputeHash(inputBytes);  // ← 直接用 inputBytes,沒用 saltBytes!
+            // ...
+        }
+    }
+}
+```
+
+**發現問題了嗎?**
+
+- `saltBytes` 被建立了
+- `GetKey()` 被呼叫了
+- **但是 saltBytes 從來沒被用在 SHA256 的計算中!**
+
+-----
+
+## 🎯 結論:GetKey **不需要!**
+
+### 答案很明確:
+
+**GetKey 和 saltBytes 是無效程式碼,可以完全移除!**
+
+主管可能:
+
+1. 從舊專案複製程式碼
+1. 原本想用 Salt 機制但後來沒實作
+1. 忘記刪除這兩行無效程式碼
+
+-----
+
+## ✅ 正確的做法
+
+### 你只需要這樣:
+
+**完全不需要 GetKey,不需要 saltBytes,不需要 HexStringToBytes**
+
+我提供給你的完整程式碼已經是**正確且精簡版本**:
+
+```csharp
+// FGetCode.cs
+private string GetCode(string sysId, string data, int codeLength)
+{
+    DateTime tryTime = DateTime.Now;
+    tryTime = new DateTime(tryTime.Year, tryTime.Month, tryTime.Day,
+           tryTime.Hour, tryTime.Minute, 0);
+    string timeStr = tryTime.ToString("yyyy-MM-dd HH:mm:ss");
+
+    string rawString = sysId + data + timeStr;  // ← 就這麼簡單!
+    byte[] inputBytes = Encoding.UTF8.GetBytes(rawString);
+
+    using (SHA256 sha256 = SHA256.Create())
+    {
+        byte[] hashBytes = sha256.ComputeHash(inputBytes);
+        StringBuilder hex = new StringBuilder();
+        foreach (byte b in hashBytes)
+            hex.AppendFormat("{0:X2}", b);
+        return hex.ToString().Substring(0, codeLength).ToUpper();
     }
 }
 ```
 
 -----
 
-### 2. Common.cs (共用工具類別)
+## 📝 修正後的 Common.cs
+
+既然不需要 GetKey,Common.cs 可以簡化成:
 
 ```csharp
 using System;
@@ -153,647 +399,77 @@ namespace HI_CODEGUARD_DLL
             /// <summary>驗證失敗</summary>
             public const string VERIFY_FAILED = "1002";
         }
-
-        /// <summary>
-        /// 十六進位字串轉Byte陣列
-        /// </summary>
-        public static byte[] HexStringToBytes(string hex)
-        {
-            if (string.IsNullOrEmpty(hex))
-                return new byte[0];
-
-            int length = hex.Length;
-            byte[] bytes = new byte[length / 2];
-            for (int i = 0; i < length; i += 2)
-            {
-                bytes[i / 2] = Convert.ToByte(hex.Substring(i, 2), 16);
-            }
-            return bytes;
-        }
-
-        /// <summary>
-        /// 根據系統ID取得金鑰(可依實際需求調整)
-        /// </summary>
-        public static string GetKey(string sysId)
-        {
-            // 這裡可以根據不同系統ID返回不同的金鑰
-            // 目前使用簡單的對應,實際上可以從設定檔或加密儲存讀取
-            Dictionary<string, string> keyMap = new Dictionary<string, string>
-            {
-                { "HI_POS", "A1B2C3D4E5F67890" },
-                { "HI_WMS", "F1E2D3C4B5A67890" },
-                { "HI_APACCESS", "1234567890ABCDEF" }
-            };
-
-            if (keyMap.ContainsKey(sysId))
-                return keyMap[sysId];
-
-            // 預設金鑰
-            return "0123456789ABCDEF";
-        }
     }
 }
 ```
 
+**就這樣!不需要 GetKey,不需要 HexStringToBytes!**
+
 -----
 
-### 3. Models/MGetCode.cs (GetCode資料模型)
+## 🤔 如果你還是想保留 GetKey 以防萬一…
+
+如果你擔心主管有其他用途,可以保留在 Common.cs 但**不使用**:
 
 ```csharp
-using Newtonsoft.Json;
-using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace HI_CODEGUARD_DLL.Models
+public class Common
 {
-    internal class MGetCode
+    public class Codes
     {
-        /// <summary>
-        /// GetCode 請求參數
-        /// </summary>
-        public class GetCodeRequest
+        public const string SUCCESS = "0000";
+        public const string SYSTEM_ERROR = "9999";
+        public const string PARAMETER_ERROR = "1001";
+        public const string VERIFY_FAILED = "1002";
+    }
+
+    // 保留但不使用(以防萬一主管有其他用途)
+    public static string GetKey(string sysId)
+    {
+        Dictionary<string, string> keyMap = new Dictionary<string, string>
         {
-            /// <summary>
-            /// 系統ID
-            /// </summary>
-            [JsonProperty]
-            [DisplayName("系統ID")]
-            public string SysID { get; set; }
+            { "HI_POS", "A1B2C3D4E5F67890" },
+            { "HI_WMS", "F1E2D3C4B5A67890" },
+            { "HI_APACCESS", "1234567890ABCDEF" }
+        };
 
-            /// <summary>
-            /// 產密碼之資料 (例如:店編、員編)
-            /// </summary>
-            [JsonProperty]
-            [DisplayName("產密碼之資料")]
-            public string Data { get; set; }
+        if (keyMap.ContainsKey(sysId))
+            return keyMap[sysId];
 
-            /// <summary>
-            /// 授權碼長度
-            /// </summary>
-            [JsonProperty]
-            [DisplayName("授權碼長度")]
-            public int CodeLength { get; set; }
-        }
+        return "0123456789ABCDEF";
+    }
 
-        /// <summary>
-        /// GetCode 回應結果
-        /// </summary>
-        public class GetCodeResponse
+    public static byte[] HexStringToBytes(string hex)
+    {
+        if (string.IsNullOrEmpty(hex))
+            return new byte[0];
+
+        int length = hex.Length;
+        byte[] bytes = new byte[length / 2];
+        for (int i = 0; i < length; i += 2)
         {
-            /// <summary>
-            /// 回覆代碼
-            /// </summary>
-            [JsonProperty]
-            [DisplayName("回覆代碼")]
-            public string Result_code { get; set; }
-
-            /// <summary>
-            /// 訊息
-            /// </summary>
-            [JsonProperty]
-            [DisplayName("訊息")]
-            public string Msg { get; set; }
-
-            /// <summary>
-            /// 授權碼
-            /// </summary>
-            [JsonProperty]
-            [DisplayName("授權碼")]
-            public string Code { get; set; }
+            bytes[i / 2] = Convert.ToByte(hex.Substring(i, 2), 16);
         }
+        return bytes;
     }
 }
 ```
 
 -----
 
-### 4. Models/MVerifyCode.cs (VerifyCode資料模型)
+## 🎯 最終答案
 
-```csharp
-using Newtonsoft.Json;
-using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+### GetKey 是什麼?
 
-namespace HI_CODEGUARD_DLL.Models
-{
-    internal class MVerifyCode
-    {
-        /// <summary>
-        /// VerifyCode 請求參數
-        /// </summary>
-        public class VerifyCodeRequest
-        {
-            /// <summary>
-            /// 系統ID
-            /// </summary>
-            [JsonProperty]
-            [DisplayName("系統ID")]
-            public string SysID { get; set; }
+**答:主管複製程式碼時的歷史遺留,實際上沒有用到!**
 
-            /// <summary>
-            /// 產密碼之資料 (例如:店編、員編)
-            /// </summary>
-            [JsonProperty]
-            [DisplayName("產密碼之資料")]
-            public string Data { get; set; }
+### 你需要實作 GetKey 嗎?
 
-            /// <summary>
-            /// 授權碼長度
-            /// </summary>
-            [JsonProperty]
-            [DisplayName("授權碼長度")]
-            public int CodeLength { get; set; }
+**答:不需要!可以完全移除!**
 
-            /// <summary>
-            /// 授權碼時效(分鐘)
-            /// </summary>
-            [JsonProperty]
-            [DisplayName("授權碼時效(分鐘)")]
-            public int MaxMinutes { get; set; }
+### 如果主管問起?
 
-            /// <summary>
-            /// 輸入之授權碼
-            /// </summary>
-            [JsonProperty]
-            [DisplayName("輸入之授權碼")]
-            public string InputCode { get; set; }
-        }
-
-        /// <summary>
-        /// VerifyCode 回應結果
-        /// </summary>
-        public class VerifyCodeResponse
-        {
-            /// <summary>
-            /// 回覆代碼
-            /// </summary>
-            [JsonProperty]
-            [DisplayName("回覆代碼")]
-            public string Result_code { get; set; }
-
-            /// <summary>
-            /// 訊息
-            /// </summary>
-            [JsonProperty]
-            [DisplayName("訊息")]
-            public string Msg { get; set; }
-
-            /// <summary>
-            /// 密碼驗證結果
-            /// </summary>
-            [JsonProperty]
-            [DisplayName("密碼驗證結果")]
-            public bool VerifyResult { get; set; }
-        }
-    }
-}
-```
+**答:「主管,我看你的程式碼 saltBytes 宣告了但沒用在 SHA256 運算中,所以我把 GetKey 相關的程式碼移除了,讓程式碼更精簡。如果有需要用到 Salt 機制,我再加回來。」**
 
 -----
 
-### 5. Factory/FGetCode.cs (產生授權碼邏輯)
-
-```csharp
-using HI_CODEGUARD_DLL.Models;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace HI_CODEGUARD_DLL.Factory
-{
-    internal class FGetCode
-    {
-        /// <summary>
-        /// 執行產生授權碼
-        /// </summary>
-        public MGetCode.GetCodeResponse Execute(string sysID, string data, int codeLength)
-        {
-            var response = new MGetCode.GetCodeResponse();
-
-            try
-            {
-                // 參數驗證
-                if (string.IsNullOrWhiteSpace(sysID))
-                {
-                    response.Result_code = Common.Codes.PARAMETER_ERROR;
-                    response.Msg = "系統ID不可為空";
-                    return response;
-                }
-
-                if (string.IsNullOrWhiteSpace(data))
-                {
-                    response.Result_code = Common.Codes.PARAMETER_ERROR;
-                    response.Msg = "資料不可為空";
-                    return response;
-                }
-
-                if (codeLength <= 0 || codeLength > 64)
-                {
-                    response.Result_code = Common.Codes.PARAMETER_ERROR;
-                    response.Msg = "授權碼長度必須介於1-64之間";
-                    return response;
-                }
-
-                // 產生授權碼
-                string code = GetCode(sysID, data, codeLength);
-
-                response.Result_code = Common.Codes.SUCCESS;
-                response.Msg = "成功";
-                response.Code = code;
-            }
-            catch (Exception ex)
-            {
-                response.Result_code = Common.Codes.SYSTEM_ERROR;
-                response.Msg = "產生授權碼失敗：" + ex.Message;
-            }
-
-            return response;
-        }
-
-        /// <summary>
-        /// 計算授權碼
-        /// </summary>
-        private string GetCode(string sysId, string data, int codeLength)
-        {
-            DateTime tryTime = DateTime.Now;
-            // 時間精確到分鐘,秒數設為0
-            tryTime = new DateTime(tryTime.Year, tryTime.Month, tryTime.Day,
-                   tryTime.Hour, tryTime.Minute, 0);
-            string timeStr = tryTime.ToString("yyyy-MM-dd HH:mm:ss");
-
-            // 組合原始字串: 系統ID + 資料 + 時間
-            string rawString = sysId + data + timeStr;
-
-            byte[] inputBytes = Encoding.UTF8.GetBytes(rawString);
-
-            // SHA256 雜湊處理
-            using (SHA256 sha256 = SHA256.Create())
-            {
-                byte[] hashBytes = sha256.ComputeHash(inputBytes);
-                StringBuilder hex = new StringBuilder();
-                foreach (byte b in hashBytes)
-                {
-                    hex.AppendFormat("{0:X2}", b);
-                }
-
-                // 取前N碼作為授權碼
-                string fullHash = hex.ToString();
-                if (codeLength > fullHash.Length)
-                    codeLength = fullHash.Length;
-
-                return fullHash.Substring(0, codeLength).ToUpper();
-            }
-        }
-    }
-}
-```
-
------
-
-### 6. Factory/FVerifyCode.cs (驗證授權碼邏輯)
-
-```csharp
-using HI_CODEGUARD_DLL.Models;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace HI_CODEGUARD_DLL.Factory
-{
-    internal class FVerifyCode
-    {
-        /// <summary>
-        /// 執行驗證授權碼
-        /// </summary>
-        public MVerifyCode.VerifyCodeResponse Execute(string sysID, string data, int codeLength, int maxMinutes, string inputCode)
-        {
-            var response = new MVerifyCode.VerifyCodeResponse();
-
-            try
-            {
-                // 參數驗證
-                if (string.IsNullOrWhiteSpace(sysID))
-                {
-                    response.Result_code = Common.Codes.PARAMETER_ERROR;
-                    response.Msg = "系統ID不可為空";
-                    response.VerifyResult = false;
-                    return response;
-                }
-
-                if (string.IsNullOrWhiteSpace(data))
-                {
-                    response.Result_code = Common.Codes.PARAMETER_ERROR;
-                    response.Msg = "資料不可為空";
-                    response.VerifyResult = false;
-                    return response;
-                }
-
-                if (string.IsNullOrWhiteSpace(inputCode))
-                {
-                    response.Result_code = Common.Codes.PARAMETER_ERROR;
-                    response.Msg = "輸入授權碼不可為空";
-                    response.VerifyResult = false;
-                    return response;
-                }
-
-                if (codeLength <= 0 || codeLength > 64)
-                {
-                    response.Result_code = Common.Codes.PARAMETER_ERROR;
-                    response.Msg = "授權碼長度必須介於1-64之間";
-                    response.VerifyResult = false;
-                    return response;
-                }
-
-                if (maxMinutes < 0)
-                {
-                    response.Result_code = Common.Codes.PARAMETER_ERROR;
-                    response.Msg = "時效分鐘數不可小於0";
-                    response.VerifyResult = false;
-                    return response;
-                }
-
-                // 驗證授權碼
-                bool isValid = VerifyCode(sysID, data, inputCode, codeLength, maxMinutes);
-
-                if (isValid)
-                {
-                    response.Result_code = Common.Codes.SUCCESS;
-                    response.Msg = "成功";
-                    response.VerifyResult = true;
-                }
-                else
-                {
-                    response.Result_code = Common.Codes.VERIFY_FAILED;
-                    response.Msg = "授權碼驗證失敗";
-                    response.VerifyResult = false;
-                }
-            }
-            catch (Exception ex)
-            {
-                response.Result_code = Common.Codes.SYSTEM_ERROR;
-                response.Msg = "驗證授權碼失敗：" + ex.Message;
-                response.VerifyResult = false;
-            }
-
-            return response;
-        }
-
-        /// <summary>
-        /// 驗證授權碼
-        /// 往前回推maxMinutes分鐘,檢查每一分鐘產生的授權碼是否符合
-        /// </summary>
-        private bool VerifyCode(string sysId, string data, string inputCode, int codeLength, int maxMinutes)
-        {
-            string codeCandidate = "";
-            DateTime now = DateTime.Now;
-
-            // 從現在往前推算maxMinutes分鐘
-            for (int i = 0; i <= maxMinutes; i++)
-            {
-                // 時間往前 i 分鐘
-                DateTime tryTime = now.AddMinutes(-i);
-                // 時間精確到分鐘,秒數設為0
-                var fixedTime = new DateTime(tryTime.Year, tryTime.Month, tryTime.Day, 
-                    tryTime.Hour, tryTime.Minute, 0);
-                string timeStr = fixedTime.ToString("yyyy-MM-dd HH:mm:ss");
-
-                // 組合原始字串
-                string rawString = sysId + data + timeStr;
-                byte[] inputBytes = Encoding.UTF8.GetBytes(rawString);
-
-                // SHA256 雜湊處理
-                using (SHA256 sha256 = SHA256.Create())
-                {
-                    byte[] hashBytes = sha256.ComputeHash(inputBytes);
-                    StringBuilder hex = new StringBuilder();
-                    foreach (byte b in hashBytes)
-                    {
-                        hex.AppendFormat("{0:X2}", b);
-                    }
-
-                    // 取前N碼
-                    string fullHash = hex.ToString();
-                    if (codeLength > fullHash.Length)
-                        codeLength = fullHash.Length;
-
-                    codeCandidate = fullHash.Substring(0, codeLength).ToUpper();
-                }
-
-                // 比對授權碼(不區分大小寫)
-                if (codeCandidate.Equals(inputCode.ToUpper(), StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-    }
-}
-```
-
------
-
-### 7. Properties/AssemblyInfo.cs (組件資訊)
-
-```csharp
-using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-
-// 組件的一般資訊是由下列的屬性集控制。
-// 變更這些屬性的值即可修改組件的相關資訊。
-[assembly: AssemblyTitle("HI_CODEGUARD_DLL")]
-[assembly: AssemblyDescription("授權碼產生與驗證系統")]
-[assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("HI_CODEGUARD_DLL")]
-[assembly: AssemblyCopyright("Copyright © 2024")]
-[assembly: AssemblyTrademark("")]
-[assembly: AssemblyCulture("")]
-
-// 將 ComVisible 設為 false 可讓此組件中的類型對 COM 元件隱藏。
-// 若必須從 COM 存取此組件中的類型,請在該類型上將 ComVisible 屬性設定為 true。
-[assembly: ComVisible(false)]
-
-// 下列 GUID 為專案公開 (Expose) 至 COM 時所要使用的 typelib ID
-[assembly: Guid("a1b2c3d4-e5f6-4789-a012-3456789abcde")]
-
-// 組件的版本資訊由下列四個值組成:
-//
-//      主要版本
-//      次要版本
-//      組建編號
-//      修訂
-//
-// 您可以指定所有的值,也可以使用 '*' 將組建和修訂編號設為預設,如下所示:
-// [assembly: AssemblyVersion("1.0.*")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
-```
-
------
-
-### 8. 測試程式 (可選,用於測試)
-
-```csharp
-using System;
-using HI_CODEGUARD_DLL;
-using Newtonsoft.Json;
-
-namespace TestCodeGuard
-{
-    class Program
-    {
-        static void Main(string[] args)
-        {
-            Console.OutputEncoding = System.Text.Encoding.UTF8;
-            Console.WriteLine("========================================");
-            Console.WriteLine("HI_CODEGUARD_DLL 授權碼測試程式");
-            Console.WriteLine("========================================\n");
-
-            CODE_GUARD codeGuard = new CODE_GUARD();
-
-            // 測試1: 產生授權碼
-            Console.WriteLine("【測試1】產生授權碼");
-            Console.WriteLine("----------------------------------------");
-            
-            string getCodeRequest = @"{
-                ""SysID"": ""HI_POS"",
-                ""Data"": ""3750"",
-                ""CodeLength"": 6
-            }";
-            
-            Console.WriteLine("Request: " + getCodeRequest);
-            string getCodeResponse = codeGuard.GetCode(getCodeRequest);
-            Console.WriteLine("Response: " + getCodeResponse);
-            Console.WriteLine();
-
-            // 解析取得授權碼
-            dynamic getCodeResult = JsonConvert.DeserializeObject(getCodeResponse);
-            string generatedCode = getCodeResult.Code;
-
-            // 測試2: 驗證授權碼(正確)
-            Console.WriteLine("【測試2】驗證授權碼(應該成功)");
-            Console.WriteLine("----------------------------------------");
-            
-            string verifyCodeRequest1 = $@"{{
-                ""SysID"": ""HI_POS"",
-                ""Data"": ""3750"",
-                ""CodeLength"": 6,
-                ""MaxMinutes"": 5,
-                ""InputCode"": ""{generatedCode}""
-            }}";
-            
-            Console.WriteLine("Request: " + verifyCodeRequest1);
-            string verifyCodeResponse1 = codeGuard.VerifyCode(verifyCodeRequest1);
-            Console.WriteLine("Response: " + verifyCodeResponse1);
-            Console.WriteLine();
-
-            // 測試3: 驗證授權碼(錯誤)
-            Console.WriteLine("【測試3】驗證授權碼(應該失敗)");
-            Console.WriteLine("----------------------------------------");
-            
-            string verifyCodeRequest2 = @"{
-                ""SysID"": ""HI_POS"",
-                ""Data"": ""3750"",
-                ""CodeLength"": 6,
-                ""MaxMinutes"": 5,
-                ""InputCode"": ""WRONG1""
-            }";
-            
-            Console.WriteLine("Request: " + verifyCodeRequest2);
-            string verifyCodeResponse2 = codeGuard.VerifyCode(verifyCodeRequest2);
-            Console.WriteLine("Response: " + verifyCodeResponse2);
-            Console.WriteLine();
-
-            Console.WriteLine("========================================");
-            Console.WriteLine("測試完成! 按任意鍵結束...");
-            Console.ReadKey();
-        }
-    }
-}
-```
-
------
-
-## 📋 使用範例
-
-### 在你的專案中呼叫:
-
-```csharp
-using HI_CODEGUARD_DLL;
-using Newtonsoft.Json;
-
-// 初始化
-CODE_GUARD codeGuard = new CODE_GUARD();
-
-// ===== 產生授權碼 =====
-string getCodeRequest = @"{
-    ""SysID"": ""HI_POS"",
-    ""Data"": ""3750"",
-    ""CodeLength"": 6
-}";
-
-string getCodeResponse = codeGuard.GetCode(getCodeRequest);
-Console.WriteLine(getCodeResponse);
-// 輸出: {"Result_code":"0000","Msg":"成功","Code":"ABC123"}
-
-// 解析回應
-dynamic result = JsonConvert.DeserializeObject(getCodeResponse);
-string code = result.Code;  // 取得產生的授權碼
-
-// ===== 驗證授權碼 =====
-string verifyCodeRequest = $@"{{
-    ""SysID"": ""HI_POS"",
-    ""Data"": ""3750"",
-    ""CodeLength"": 6,
-    ""MaxMinutes"": 5,
-    ""InputCode"": ""{code}""
-}}";
-
-string verifyCodeResponse = codeGuard.VerifyCode(verifyCodeRequest);
-Console.WriteLine(verifyCodeResponse);
-// 輸出: {"Result_code":"0000","Msg":"成功","VerifyResult":true}
-
-// 解析驗證結果
-dynamic verifyResult = JsonConvert.DeserializeObject(verifyCodeResponse);
-bool isValid = verifyResult.VerifyResult;  // true = 驗證通過
-```
-
------
-
-## ⚙️ 需要的NuGet套件
-
-在你的專案中安裝:
-
-```
-Install-Package Newtonsoft.Json -Version 13.0.3
-```
-
-或在 `packages.config` 加入:
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<packages>
-  <package id="Newtonsoft.Json" version="13.0.3" targetFramework="net48" />
-</packages>
-```
-
------
-
-以上就是完整的程式碼!你可以直接複製到你的專案中使用。所有檔案都已經包含完整的註解說明。​​​​​​​​​​​​​​​​
+**總結:直接用我提供的完整程式碼,GetKey 相關的都可以不理會!** 😊​​​​​​​​​​​​​​​​

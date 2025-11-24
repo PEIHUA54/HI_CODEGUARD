@@ -1,3 +1,8 @@
+好的!你需要將 TextBox 的文字轉換成 int。這裡有幾種方法:
+
+## 🔧 修正後的完整程式碼
+
+```csharp
 using HI_APACCESS_DLL_TEST;
 using Newtonsoft.Json;
 using System;
@@ -19,38 +24,64 @@ namespace HI_CODEGUARD_DLL_TEST
             InitializeComponent();
         }
 
-        //
+        // 產生授權碼
         private void button1_Click(object sender, EventArgs e)
         {
-            var req = new Model.GetCodeRequest
+            try
             {
-                SysID = txtSysID.Text,
-                Data = txtData.Text,
-                CodeLength = txtCodeLength.Text
-            };
-            string jsonReq = JsonConvert.SerializeObject(req);
-            string jsonRes = new HI_CODEGUARD_DLL.CODE_GUARD().GetCode(jsonReq);
-            var res = JsonConvert.DeserializeObject<Model.GetCodeResponse>(jsonRes);
+                // 方法1: 使用 int.Parse (推薦用於確定是數字的情況)
+                var req = new Model.GetCodeRequest
+                {
+                    SysID = txtSysID.Text,
+                    Data = txtData.Text,
+                    CodeLength = int.Parse(txtCodeLength.Text)  // ← string 轉 int
+                };
+                
+                string jsonReq = JsonConvert.SerializeObject(req);
+                string jsonRes = new HI_CODEGUARD_DLL.CODE_GUARD().GetCode(jsonReq);
+                var res = JsonConvert.DeserializeObject<Model.GetCodeResponse>(jsonRes);
 
-            ShowResult(jsonReq, jsonRes);
+                ShowResult(jsonReq, jsonRes);
+            }
+            catch (FormatException)
+            {
+                MessageBox.Show("CodeLength 必須是數字!", "輸入錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"錯誤: {ex.Message}", "系統錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
-        //
+        // 驗證授權碼
         private void button2_Click(object sender, EventArgs e)
         {
-            var req = new Model.VerifyCodeRequest
+            try
             {
-                SysID = txtSysID.Text,
-                Data = txtData.Text,
-                CodeLength = txtCodeLength.Text,
-                MaxMinutes = txtMaxMinutes.Text,
-                InputCode = txtInputCode.Text
-            };
-            string jsonReq = JsonConvert.SerializeObject(req);
-            string jsonRes = new HI_CODEGUARD_DLL.CODE_GUARD().VerifyCode(jsonReq);
-            var res = JsonConvert.DeserializeObject<Model.VerifyCodeResponse>(jsonRes);
+                // 方法1: 使用 int.Parse
+                var req = new Model.VerifyCodeRequest
+                {
+                    SysID = txtSysID.Text,
+                    Data = txtData.Text,
+                    CodeLength = int.Parse(txtCodeLength.Text),      // ← string 轉 int
+                    MaxMinutes = int.Parse(txtMaxMinutes.Text),      // ← string 轉 int
+                    InputCode = txtInputCode.Text
+                };
+                
+                string jsonReq = JsonConvert.SerializeObject(req);
+                string jsonRes = new HI_CODEGUARD_DLL.CODE_GUARD().VerifyCode(jsonReq);
+                var res = JsonConvert.DeserializeObject<Model.VerifyCodeResponse>(jsonRes);
 
-            ShowResult(jsonReq, jsonRes);
+                ShowResult(jsonReq, jsonRes);
+            }
+            catch (FormatException)
+            {
+                MessageBox.Show("CodeLength 和 MaxMinutes 必須是數字!", "輸入錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"錯誤: {ex.Message}", "系統錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         // 顯示 Request & Response
@@ -63,3 +94,256 @@ namespace HI_CODEGUARD_DLL_TEST
         }
     }
 }
+```
+
+-----
+
+## 📚 String 轉 Int 的三種方法
+
+### 方法1: `int.Parse()` - **最簡單直接**
+
+```csharp
+// 如果轉換失敗會拋出 FormatException
+CodeLength = int.Parse(txtCodeLength.Text)
+```
+
+**優點:** 簡單明瞭  
+**缺點:** 如果不是數字會拋出例外
+
+-----
+
+### 方法2: `int.TryParse()` - **最安全**
+
+```csharp
+// 產生授權碼 - 使用 TryParse
+private void button1_Click(object sender, EventArgs e)
+{
+    try
+    {
+        // 驗證 CodeLength 是否為數字
+        if (!int.TryParse(txtCodeLength.Text, out int codeLength))
+        {
+            MessageBox.Show("CodeLength 必須是數字!", "輸入錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            txtCodeLength.Focus();
+            return;
+        }
+
+        var req = new Model.GetCodeRequest
+        {
+            SysID = txtSysID.Text,
+            Data = txtData.Text,
+            CodeLength = codeLength  // ← 使用已轉換的變數
+        };
+        
+        string jsonReq = JsonConvert.SerializeObject(req);
+        string jsonRes = new HI_CODEGUARD_DLL.CODE_GUARD().GetCode(jsonReq);
+        var res = JsonConvert.DeserializeObject<Model.GetCodeResponse>(jsonRes);
+
+        ShowResult(jsonReq, jsonRes);
+    }
+    catch (Exception ex)
+    {
+        MessageBox.Show($"錯誤: {ex.Message}", "系統錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+    }
+}
+
+// 驗證授權碼 - 使用 TryParse
+private void button2_Click(object sender, EventArgs e)
+{
+    try
+    {
+        // 驗證 CodeLength 是否為數字
+        if (!int.TryParse(txtCodeLength.Text, out int codeLength))
+        {
+            MessageBox.Show("CodeLength 必須是數字!", "輸入錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            txtCodeLength.Focus();
+            return;
+        }
+
+        // 驗證 MaxMinutes 是否為數字
+        if (!int.TryParse(txtMaxMinutes.Text, out int maxMinutes))
+        {
+            MessageBox.Show("MaxMinutes 必須是數字!", "輸入錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            txtMaxMinutes.Focus();
+            return;
+        }
+
+        var req = new Model.VerifyCodeRequest
+        {
+            SysID = txtSysID.Text,
+            Data = txtData.Text,
+            CodeLength = codeLength,    // ← 使用已轉換的變數
+            MaxMinutes = maxMinutes,    // ← 使用已轉換的變數
+            InputCode = txtInputCode.Text
+        };
+        
+        string jsonReq = JsonConvert.SerializeObject(req);
+        string jsonRes = new HI_CODEGUARD_DLL.CODE_GUARD().VerifyCode(jsonReq);
+        var res = JsonConvert.DeserializeObject<Model.VerifyCodeResponse>(jsonRes);
+
+        ShowResult(jsonReq, jsonRes);
+    }
+    catch (Exception ex)
+    {
+        MessageBox.Show($"錯誤: {ex.Message}", "系統錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+    }
+}
+```
+
+**優點:** 最安全,不會拋出例外  
+**缺點:** 程式碼稍微長一點
+
+-----
+
+### 方法3: `Convert.ToInt32()` - **可處理 null**
+
+```csharp
+CodeLength = Convert.ToInt32(txtCodeLength.Text)
+```
+
+**優點:** 可以處理 null 和空字串(會回傳 0)  
+**缺點:** 非數字會拋出例外
+
+-----
+
+## 🎯 我的建議
+
+### **使用方法1 (int.Parse + try-catch)** - 最平衡
+
+這是最簡潔且實用的方式:
+
+```csharp
+using HI_APACCESS_DLL_TEST;
+using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace HI_CODEGUARD_DLL_TEST
+{
+    public partial class Form1 : Form
+    {
+        public Form1()
+        {
+            InitializeComponent();
+        }
+
+        // 產生授權碼
+        private void button1_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                var req = new Model.GetCodeRequest
+                {
+                    SysID = txtSysID.Text,
+                    Data = txtData.Text,
+                    CodeLength = int.Parse(txtCodeLength.Text)  // string → int
+                };
+                
+                string jsonReq = JsonConvert.SerializeObject(req);
+                string jsonRes = new HI_CODEGUARD_DLL.CODE_GUARD().GetCode(jsonReq);
+                var res = JsonConvert.DeserializeObject<Model.GetCodeResponse>(jsonRes);
+
+                ShowResult(jsonReq, jsonRes);
+            }
+            catch (FormatException)
+            {
+                MessageBox.Show("CodeLength 必須是數字!", "輸入錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                txtCodeLength.Focus();
+                txtCodeLength.SelectAll();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"錯誤: {ex.Message}", "系統錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        // 驗證授權碼
+        private void button2_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                var req = new Model.VerifyCodeRequest
+                {
+                    SysID = txtSysID.Text,
+                    Data = txtData.Text,
+                    CodeLength = int.Parse(txtCodeLength.Text),   // string → int
+                    MaxMinutes = int.Parse(txtMaxMinutes.Text),   // string → int
+                    InputCode = txtInputCode.Text
+                };
+                
+                string jsonReq = JsonConvert.SerializeObject(req);
+                string jsonRes = new HI_CODEGUARD_DLL.CODE_GUARD().VerifyCode(jsonReq);
+                var res = JsonConvert.DeserializeObject<Model.VerifyCodeResponse>(jsonRes);
+
+                ShowResult(jsonReq, jsonRes);
+            }
+            catch (FormatException)
+            {
+                MessageBox.Show("CodeLength 和 MaxMinutes 必須是數字!", "輸入錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"錯誤: {ex.Message}", "系統錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        // 顯示 Request & Response
+        private void ShowResult(string req, string res)
+        {
+            Form2 f = new Form2();
+            f.TextBoxMsg1 = req;
+            f.TextBoxMsg2 = res;
+            f.Show();
+        }
+    }
+}
+```
+
+-----
+
+## 💡 額外建議:限制 TextBox 只能輸入數字
+
+在 Form1.Designer.cs 或 Form1.cs 的 InitializeComponent() 後加入:
+
+```csharp
+public Form1()
+{
+    InitializeComponent();
+    
+    // 限制只能輸入數字
+    txtCodeLength.KeyPress += NumberOnly_KeyPress;
+    txtMaxMinutes.KeyPress += NumberOnly_KeyPress;
+}
+
+// 限制只能輸入數字的方法
+private void NumberOnly_KeyPress(object sender, KeyPressEventArgs e)
+{
+    // 只允許數字和控制字元(如Backspace)
+    if (!char.IsDigit(e.KeyChar) && !char.IsControl(e.KeyChar))
+    {
+        e.Handled = true;  // 拒絕輸入
+    }
+}
+```
+
+這樣使用者就無法在 CodeLength 和 MaxMinutes 欄位輸入非數字的內容!
+
+-----
+
+## 📝 總結
+
+**最簡單的改法:**
+
+```csharp
+CodeLength = int.Parse(txtCodeLength.Text)
+MaxMinutes = int.Parse(txtMaxMinutes.Text)
+```
+
+加上 `try-catch` 處理錯誤就完美了! 👍​​​​​​​​​​​​​​​​

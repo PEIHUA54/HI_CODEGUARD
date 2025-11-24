@@ -1,0 +1,265 @@
+開發兩個DLL 新專案HI_CODEGUARD_DLL
+1.GetCode (產生授權碼):產生授權碼
+Request:SysID、Data、CodeLength
+Response:Result_code、Msg、Code
+Request範例：
+{
+  "SysID": "HI_POS",
+  "Data": "3750",
+  "CodeLength": 6
+}
+Response回傳範例
+成功:
+ {
+"Result_code": "0000",
+"Msg": "成功",
+"Code": "ABC123"
+}
+
+2.VerifyCode (驗證授權碼是否正確): 驗證授權碼是否正確
+Request:SysID、Data、CodeLength、MaxMinutes、InputCode
+Response:Result_code、Msg、VerifyResult
+Request範例：
+{
+  "SysID": "HI_POS",
+  "Data": "3750",
+  "CodeLength": 6,
+  "MaxMinutes": 720,
+  "InputCode": "123456"
+}
+Response回傳範例
+成功
+{
+"Result_code": "0000",
+"Msg": "成功",
+"VerifyResult": true
+}
+ 
+主要程式碼:
+using HI_CODEGUARD_DLL.Factory;
+using HI_CODEGUARD_DLL.Models;
+using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace HI_CODEGUARD_DLL
+{
+    public class CODE_GUARD
+    {
+        public string GetCode(string requestJson)
+        {
+            var response = new MGetCode.GetCodeResponse();
+
+            try
+            {
+                var request = JsonConvert.DeserializeObject<MGetCode.GetCodeRequest>(requestJson);
+                HI_CODEGUARD_DLL.Factory.FGetCode func = new FGetCode();
+                response = func.Execute(request.SysID, request.Data, request.CodeLength);
+            }
+            catch (Exception ex)
+            {
+                response = new MGetCode.GetCodeResponse
+                {
+                    Result_code = Common.Codes.SYSTEM_ERROR,
+                    Msg = "系統錯誤：" + ex.Message
+                };
+            }
+
+            return JsonConvert.SerializeObject(response);
+        }
+
+        public string VerifyCode(string requestJson)
+        {
+            var response = new MVerifyCode.VerifyCodeResponse();
+
+            try
+            {
+                var request = JsonConvert.DeserializeObject<MVerifyCode.VerifyCodeRequest>(requestJson);
+                HI_CODEGUARD_DLL.Factory.FVerifyCode func = new FVerifyCode();
+                response = func.Execute(request.SysID, request.Data, request.CodeLength, request.MaxMinutes, request.InputCode);
+            }
+            catch (Exception ex)
+            {
+                response = new MVerifyCode.VerifyCodeResponse
+                {
+                    Result_code = Common.Codes.SYSTEM_ERROR,
+                    Msg = "系統錯誤：" + ex.Message
+                };
+            }
+
+            return JsonConvert.SerializeObject(response);
+        }
+    }
+}
+
+主要功能是產授權碼跟解析授權碼
+要使用相關程式如下:
+1.
+        //計算密碼
+        public string getCode(string sys_id,string data, int codeLength)
+        {
+            DateTime tryTime = DateTime.Now;
+            tryTime = new DateTime(tryTime.Year, tryTime.Month, tryTime.Day,
+                   tryTime.Hour, tryTime.Minute, 0);
+            string timeStr = tryTime.ToString("yyyy-MM-dd HH:mm:ss"); // 精確到分鐘
+
+            string rawString = sys_id + data + timeStr;
+
+            byte[] inputBytes = Encoding.UTF8.GetBytes(rawString);
+
+            // 雜湊處理
+            using (SHA256 sha256 = SHA256.Create())
+            {
+                byte[] hashBytes = sha256.ComputeHash(inputBytes);
+                StringBuilder hex = new StringBuilder();
+                foreach (byte b in hashBytes)
+                    hex.AppendFormat("{0:X2}", b);
+                return hex.ToString().Substring(0, codeLength).ToUpper(); // 可調整長度
+            }
+        }
+2.
+               /// <summary>
+        /// 驗證驗證碼。
+        /// </summary>
+        public bool VerifyCode(string sys_id,string data, string inputCode,int pwd_length, int maxMinutes)
+        {
+            string codeCandidate = "";
+            DateTime now = DateTime.Now;
+            for (int i = 0; i <= maxMinutes; i++)
+            {
+                // 時間往前 i 分鐘
+                DateTime tryTime = now.AddMinutes(-i);
+                var fixedTime = new DateTime(tryTime.Year, tryTime.Month, tryTime.Day, tryTime.Hour, tryTime.Minute, 0);
+                string timeStr = fixedTime.ToString("yyyy-MM-dd HH:mm:ss");
+
+                string rawString = sys_id + data + timeStr;
+                byte[] hashBytes;
+
+                byte[] saltBytes = new byte[8];
+                saltBytes = HexStringToBytes(GetKey(sys_id));
+
+                byte[] inputBytes = Encoding.UTF8.GetBytes(rawString);
+
+                // 雜湊處理
+                using (SHA256 sha256 = SHA256.Create())
+                {
+                    hashBytes = sha256.ComputeHash(inputBytes);
+                    StringBuilder hex = new StringBuilder();
+                    foreach (byte b in hashBytes)
+                        hex.AppendFormat("{0:X2}", b);
+                    codeCandidate = hex.ToString().Substring(0, pwd_length).ToUpper(); // 可調整長度
+                }
+                if (codeCandidate == inputCode.ToUpper())
+                    return true;
+            }
+
+            return false;
+        }
+
+
+MODEL:
+1.
+using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace HI_CODEGUARD_DLL.Models
+{
+    internal class MGetCode
+    {
+        public class GetCodeRequest
+        {
+            [JsonProperty]
+            [DisplayName("系統ID")]
+            internal string SysID { get; set; }
+
+            [JsonProperty]
+            [DisplayName("產密碼之資料")]
+            internal string Data { get; set; }  //店編、員編
+
+            [JsonProperty]
+            [DisplayName("授權碼長度")]
+            internal int CodeLength { get; set; }
+        }
+        internal class GetCodeResponse
+        {
+            [JsonProperty]
+            [DisplayName("回覆代碼")]
+            internal string Result_code { get; set; }
+
+            [JsonProperty]
+            [DisplayName("訊息")]
+            internal string Msg { get; set; }
+
+            [JsonProperty]
+            [DisplayName("回覆結果")]
+            public object Code { get; set; }
+        }
+    }
+}
+
+2.
+using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace HI_CODEGUARD_DLL.Models
+{
+    internal class MVerifyCode
+    {
+        public class VerifyCodeRequest
+        {
+            [JsonProperty]
+            [DisplayName("系統ID")]
+            internal string SysID { get; set; }
+
+            [JsonProperty]
+            [DisplayName("產密碼之資料")]
+            internal string Data { get; set; }  //店編、員編
+
+            [JsonProperty]
+            [DisplayName("授權碼長度")]
+            internal int CodeLength { get; set; }
+
+            [JsonProperty]
+            [DisplayName("授權碼時效(分鐘)")]
+            internal int MaxMinutes { get; set; }
+
+            [JsonProperty]
+            [DisplayName("輸入之授權碼")]
+            internal string InputCode { get; set; }
+        }
+        internal class VerifyCodeResponse
+        {
+            [JsonProperty]
+            [DisplayName("回覆代碼")]
+            internal string Result_code { get; set; }
+
+            [JsonProperty]
+            [DisplayName("訊息")]
+            internal string Msg { get; set; }
+
+            [JsonProperty]
+            [DisplayName("密碼驗證結果")]
+            public bool VerifyResult { get; set; }
+        }
+    }
+}
+
+方法區:
+1.FGetCode
+2.FVerifyCode
+
+最後有個疑問，主管沒說要存到哪裡去，是不用存db資料表嗎?
+那這樣VerifyCode怎麼用?
